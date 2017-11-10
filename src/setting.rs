@@ -7,15 +7,18 @@ lazy_static! {
 	static ref SETTINGS: RwLock<Config> = get_config();
 }
 
-fn get_config() ->  RwLock<Config> {
-	let mut settings = Config::default();
-	settings.merge(File::with_name("config")).unwrap();
-	RwLock::new(settings)
+fn get_config() -> RwLock<Config> {
+    let mut settings = Config::default();
+    settings.merge(File::with_name("config")).unwrap();
+    RwLock::new(settings)
 }
 
 pub fn get_str(key: &str) -> String {
-	let setting = SETTINGS.read().unwrap();
-	setting.get_str(key).unwrap()
+    let setting = SETTINGS.read().unwrap();
+    setting.get_str(key).unwrap()
 }
 
-
+pub fn get_int64(key: &str) -> i64 {
+    let setting = SETTINGS.read().unwrap();
+    setting.get_int(key).unwrap()
+}

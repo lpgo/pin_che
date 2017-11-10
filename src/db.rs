@@ -6,6 +6,7 @@ use rocket::http::Status;
 use r2d2;
 use r2d2_redis::RedisConnectionManager;
 use redis::Connection;
+use setting;
 
 
 type Pool = r2d2::Pool<RedisConnectionManager>;
@@ -32,7 +33,10 @@ impl Deref for DbConn {
 }
 
 pub fn init_db_conn() -> Client {
-    Client::connect("localhost", 27017).expect("can't connect db")
+    Client::connect(
+        &setting::get_str("app.dburl"),
+        setting::get_int64("app.dbport") as u16,
+    ).expect("can't connect db")
 }
 
 
@@ -40,7 +44,8 @@ pub fn init_db_conn() -> Client {
 
 pub fn init_redis() -> Pool {
     let config = Default::default();
-    let manager = RedisConnectionManager::new("redis://localhost").expect("can't open redis!!");
+    let manager = RedisConnectionManager::new(setting::get_str("app.redis").as_str())
+        .expect("can't open redis!!");
     r2d2::Pool::new(config, manager).expect("can't pooled redis conection!!")
 }
 
