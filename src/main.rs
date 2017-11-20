@@ -4,7 +4,7 @@
 extern crate rocket;
 extern crate pin_che;
 extern crate mongodb;
-#[macro_use(bson, doc)]
+
 extern crate bson;
 extern crate redis;
 
@@ -12,41 +12,28 @@ use mongodb::ThreadedClient;
 use mongodb::db::ThreadedDatabase;
 use bson::Bson;
 use redis::Commands;
+use pin_che::entity;
 
 #[get("/")]
 fn index(conn: pin_che::db::DbConn, cache: pin_che::db::CacheConn) -> String {
-    let coll = conn.db("test").collection("movies");
-
-    let doc =
-        doc! { "title" => "Jaws",
-                      "array" => [ 1, 2, 3 ] };
-
-    // Insert document into 'test.movies' collection
-    coll.insert_one(doc.clone(), None).ok().expect(
-        "Failed to insert document.",
-    );
-
-    // Find the document and receive a cursor
-    let mut cursor = coll.find(Some(doc.clone()), None).ok().expect(
-        "Failed to execute find.",
-    );
-
-    let item = cursor.next();
-
+    let coll = conn.db("test").collection("admin");
     let name: String = cache.get("name").unwrap();
-    println!("{}", name);
+    println!("redis get name is {}", &name);
 
-    // cursor.next() returns an Option<Result<Document>>
-    match item {
-        Some(Ok(doc)) => {
-            match doc.get("title") {
-                Some(&Bson::String(ref title)) => return title.clone(),
-                _ => panic!("Expected title to be a string!"),
-            }
-        }
-        Some(Err(_)) => panic!("Failed to get next from server!"),
-        None => panic!("Server returned no results!"),
+    let admin = entity::Admin {
+        id: None,
+        name: String::from("lp"),
+        pwd: String::from("123456"),
     };
+
+    let serialized_person = bson::to_bson(&admin).unwrap(); // Serialize
+
+    if let Bson::Document(document) = serialized_person {
+        coll.insert_one(document, None).unwrap(); // Insert into a MongoDB collection
+    } else {
+        println!("Error converting the BSON object into a MongoDB document");
+    }
+    name
 }
 
 fn main() {
@@ -56,3 +43,11 @@ fn main() {
         .manage(pin_che::db::init_redis())
         .launch();
 }
+
+
+
+#[get("/registerOwner")]
+fn register_owner() -> String {
+    String::from("s")
+}
+
