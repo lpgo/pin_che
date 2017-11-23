@@ -3,11 +3,14 @@ use std::default::Default;
 use crypto::sha2::Sha256;
 use jwt::{Header,Token};
 use rocket::Outcome;
-use rocket::http::Status;
-use rocket::request::{self, Request, FromRequest};
+use rocket::http::{Status,RawStr};
+use rocket::request::{self, Request, FromRequest, FromFormValue};
+use bson::Bson;
+use bson::oid::ObjectId;
+use service::ServiceError;
 
 //车主
-#[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
+#[derive(PartialEq, Debug, Serialize, Deserialize,Clone,FromForm)]
 pub struct User {
 	#[serde(rename = "_id")]
     pub id :Option<String>,
@@ -18,11 +21,6 @@ pub struct User {
     pub plate_number:Option<String>,
     pub car_type : Option<String>,
     pub car_pic : Option<String>,
-    pub level : i32,
-    pub evaluation : i32,
-    pub all_star : i32,
-    pub update_plate_number_count: i32,
-    pub cancel_trip_count: i32,
     pub refund_count:i32,
     pub user_type : UserType
 }
@@ -143,7 +141,7 @@ pub struct JwtUser {
 impl JwtUser {
 	pub fn from_jwt(s: &str) -> Option<Self> {
 		let token = Token::<Header, JwtUser>::parse(s).unwrap();
-		 if token.verify(b"liupeng", Sha256::new()) {
+		 if token.verify(b"geekgogo", Sha256::new()) {
 	        Some(token.claims)
 	    } else {
 	        None
@@ -231,11 +229,6 @@ impl User {
                 card_id:card_id,
                 plate_number:Some(plate_number),
                 openid:openid,
-                level:3,
-                evaluation:0,
-                all_star:0,
-                update_plate_number_count:2,
-                cancel_trip_count:2,
                 refund_count:3,
                 user_type:UserType::Owner}
     }
@@ -248,11 +241,6 @@ impl User {
                 card_id:card_id,
                 plate_number:None,
                 openid:openid,
-                level:3,
-                evaluation:0,
-                all_star:0,
-                update_plate_number_count:0,
-                cancel_trip_count:0,
                 refund_count:3,
                 user_type:UserType::Passenger}
     }
@@ -325,6 +313,19 @@ impl Trip {
     }
 }
 
+
+impl<'t> FromFormValue<'t> for UserType {
+    type Error = ServiceError;
+
+    fn from_form_value(from_value: &'t RawStr) -> Result<UserType,ServiceError> {
+         match from_value.as_str() {
+            "Owner" => Ok(UserType::Owner),
+            "Passenger" => Ok(UserType::Passenger),
+            "Anonymous" => Ok(UserType::Anonymous),
+            _ => Err(ServiceError::String("error user type".to_owned()))
+        }
+    }
+}
 
 
     

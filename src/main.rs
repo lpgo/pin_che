@@ -8,20 +8,24 @@ extern crate mongodb;
 extern crate bson;
 extern crate redis;
 
-use mongodb::ThreadedClient;
 use mongodb::db::ThreadedDatabase;
 use bson::Bson;
+use bson::oid::ObjectId;
 use redis::Commands;
-use pin_che::entity;
+use pin_che::{entity, db, service};
+use rocket::request::LenientForm;
+use rocket::response::content;
+
+const OK: content::Json<&'static str> = content::Json("{'ok': true}");
 
 #[get("/")]
-fn index(conn: pin_che::db::DbConn, cache: pin_che::db::CacheConn) -> String {
-    let coll = conn.db("test").collection("admin");
+fn index(conn: db::DbConn, cache: db::CacheConn) -> String {
+    let coll = conn.collection("admin");
     let name: String = cache.get("name").unwrap();
     println!("redis get name is {}", &name);
 
     let admin = entity::Admin {
-        id: None,
+        id: Some("sdfsf".to_owned()),
         name: String::from("lp"),
         pwd: String::from("123456"),
     };
@@ -38,7 +42,7 @@ fn index(conn: pin_che::db::DbConn, cache: pin_che::db::CacheConn) -> String {
 
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index])
+        .mount("/", routes![index, register_owner])
         .manage(pin_che::db::init_db_conn())
         .manage(pin_che::db::init_redis())
         .launch();
@@ -46,8 +50,10 @@ fn main() {
 
 
 
-#[get("/registerOwner")]
-fn register_owner() -> String {
-    String::from("s")
+#[get("/registerOwner?<user>")]
+fn register_owner(
+    user: entity::User,
+    s: service::Service,
+) -> service::Result<content::Json<&'static str>> {
+    s.add_user(user).map(|_| OK)
 }
-

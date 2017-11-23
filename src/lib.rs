@@ -1,4 +1,4 @@
-#![feature(plugin)]
+#![feature(plugin, custom_derive)]
 #![plugin(rocket_codegen)]
 
 #[macro_use]
@@ -15,6 +15,8 @@ extern crate r2d2_redis;
 extern crate rustc_serialize;
 extern crate jwt;
 extern crate crypto;
+extern crate bson;
+
 
 pub mod setting;
 pub mod db;
