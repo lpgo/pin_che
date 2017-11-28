@@ -117,8 +117,7 @@ impl DbConn {
     {
         let coll = self.collection(T::get_name());
         to_doc(&t)
-            .and_then(|mut doc| {
-                doc.insert("_id", ObjectId::new().unwrap().to_hex());
+            .and_then(|doc| {
                 coll.insert_one(doc, None).map_err(|err| {
                     ServiceError::MongodbError(err)
                 })

@@ -13,6 +13,7 @@ use bson::Bson;
 use bson::oid::ObjectId;
 use redis::Commands;
 use pin_che::{entity, db, service};
+use pin_che::service::{Result, Service, ServiceError};
 use rocket::request::LenientForm;
 use rocket::response::content;
 
@@ -42,7 +43,7 @@ fn index(conn: db::DbConn, cache: db::CacheConn) -> String {
 
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index, register_owner])
+        .mount("/", routes![index, register_owner, publish_trip])
         .manage(pin_che::db::init_db_conn())
         .manage(pin_che::db::init_redis())
         .launch();
@@ -52,8 +53,26 @@ fn main() {
 
 #[get("/registerOwner?<user>")]
 fn register_owner(
-    user: entity::User,
-    s: service::Service,
-) -> service::Result<content::Json<&'static str>> {
-    s.add_user(user).map(|_| OK)
+    jwt: entity::JwtUser,
+    user: entity::OwnerForm,
+    s: Service,
+) -> Result<content::Json<&'static str>> {
+    s.add_user(entity::User::new_owner(jwt.id, jwt.name, user))
+        .map(|_| OK)
+}
+
+#[get("/publishTrip?<trip>")]
+fn publish_trip(
+    jwt: entity::JwtUser,
+    trip: entity::TripForm,
+    s: Service,
+) -> Result<content::Json<&'static str>> {
+    let tel = s.get_tel(&jwt.id)?;
+    if jwt.role == "Owner" {
+        s.publish_trip(entity::Trip::new(jwt.id, tel, trip)).map(
+            |_| OK,
+        )
+    } else {
+        Err(ServiceError::NoAuth)
+    }
 }

@@ -13,16 +13,25 @@ use service::ServiceError;
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone,FromForm)]
 pub struct User {
 	#[serde(rename = "_id")]
-    pub id :Option<String>,
-    pub openid: String,
+    pub openid :String,
     pub tel:String,
     pub name: String,
     pub card_id: String,
-    pub plate_number:Option<String>,
-    pub car_type : Option<String>,
-    pub car_pic : Option<String>,
+    pub plate_number:String,
+    pub car_type : String,
+    pub car_pic : String,
     pub refund_count:i32,
     pub user_type : UserType
+}
+
+#[derive(FromForm)]
+pub struct OwnerForm {
+    pub tel:String,
+    pub card_id: String,
+    pub plate_number:String,
+    pub car_type : String,
+    pub car_pic : String,
+    pub code : String,  //短信验证码
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
@@ -59,24 +68,35 @@ pub struct Complain {
 #[derive(PartialEq, Debug, Serialize, Deserialize,Default,Clone)]
 pub struct Trip {
     #[serde(rename = "_id")]
-    pub id :Option<String>,
+    pub id :String,
     pub openid: String,
     pub seat_count : i32,
     pub current_seat : i32,
     pub start_time : i64,
-    pub start_time_text : String,
-    pub line_id:i32,
     pub start:String,
     pub end:String,
     pub price:i32,
-    pub venue:String,
-    pub status:String,
-    pub level:i32,
+    pub venue:String, //出发地点
+    pub status:TripStatus,
     pub message:Option<String>,
     pub plate_number: String,
-    pub tel: Option<String>,
+    pub tel: String,
     pub car_type: String,
     pub orders:Vec<Order>
+}
+
+#[derive(FromForm)]
+pub struct TripForm {
+    pub seat_count : i32,
+    pub start_time : i64,
+    pub start:String,
+    pub end:String,
+    pub price:i32,
+    pub venue:String, //集合地点
+    pub status:TripStatus,
+    pub message:Option<String>,
+    pub plate_number: String,
+    pub car_type: String,
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
@@ -133,14 +153,17 @@ pub enum OrderStatus {
 
 #[derive(Default, RustcDecodable, RustcEncodable, Debug)]
 pub struct JwtUser {
-	name : String,
-	role : String,
-	user_type: String
+    pub id : String,   //ID 如果是微信登录就是openid
+	pub name : String,
+	pub role : String,
+	pub user_type: String,
+    pub exp : i64,
 }
 
 impl JwtUser {
 	pub fn from_jwt(s: &str) -> Option<Self> {
 		let token = Token::<Header, JwtUser>::parse(s).unwrap();
+        println!("{:?}", token);
 		 if token.verify(b"geekgogo", Sha256::new()) {
 	        Some(token.claims)
 	    } else {
@@ -150,19 +173,23 @@ impl JwtUser {
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for JwtUser {
-    type Error = ();
+    type Error = ServiceError;
 
-    fn from_request(request: &'a Request<'r>) -> request::Outcome<JwtUser, ()> {
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<JwtUser, ServiceError> {
         let keys: Vec<_> = request.headers().get("Authorization").collect();
         if keys.len() != 1 {
-            return Outcome::Failure((Status::BadRequest, ()));
+            return Outcome::Failure((Status::BadRequest, ServiceError::NoAuth));
         }
         let (_, key) = keys[0].split_at(7);
-
+        println!("key is {}", key);
         if let Some(user) = JwtUser::from_jwt(key) {
-        	 Outcome::Success(user)
+            if user.user_type == "weixin" {
+                Outcome::Success(user)
+            } else {
+                Outcome::Failure((Status::BadRequest, ServiceError::NoAuth))
+            }
         } else {
-        	Outcome::Failure((Status::BadRequest, ()))
+        	Outcome::Failure((Status::BadRequest, ServiceError::NoAuth))
         }
     }
 }
@@ -174,6 +201,14 @@ impl Default for UserType {
         UserType::Anonymous
     }
 }
+
+impl Default for TripStatus {
+    // add code here
+    fn default() -> TripStatus {
+        TripStatus::Prepare
+    }
+}
+
 
 impl fmt::Display for UserType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -220,39 +255,21 @@ pub struct LoginStatus {
 }
 
 impl User {
-    pub fn new_owner(tel:String,name:String,card_id:String,car_type:String,car_pic:String,plate_number:String,openid:String) -> User {
-       User{id:None,
-                car_type:Some(car_type),
-                car_pic:Some(car_pic),
-                tel:tel,
-                name:name,
-                card_id:card_id,
-                plate_number:Some(plate_number),
-                openid:openid,
-                refund_count:3,
-                user_type:UserType::Owner}
-    }
-    pub fn new_passenger(tel:String,name:String,card_id:String,openid:String) -> User {
-       User{id:None,
-                car_type:None,
-                car_pic:None,
-                tel:tel,
-                name:name,
-                card_id:card_id,
-                plate_number:None,
-                openid:openid,
-                refund_count:3,
-                user_type:UserType::Passenger}
+    pub fn new_owner(openid:String,name:String,owner:OwnerForm) -> User {
+       User{openid,
+        name,
+        tel:owner.tel,
+        card_id:owner.card_id,
+        plate_number:owner.plate_number,
+        car_type:owner.car_type,
+        car_pic:owner.car_pic,
+        user_type:UserType::Owner,
+        refund_count:2}
     }
 }
 
 
 impl Order {
-    
-    pub fn set_status(&mut self,status:OrderStatus) {
-        self.status = format!("{}",status);
-    }
-    
     pub fn get_status(&self) -> OrderStatus {
         match self.status.as_str() {
             "PayFail" => OrderStatus::PayFail,
@@ -266,6 +283,26 @@ impl Order {
 }
 
 impl Trip {
+
+    pub fn new(openid:String,tel:String,form:TripForm) -> Trip{
+        Trip{
+            openid,
+            tel,
+            id:ObjectId::new().unwrap().to_hex(),
+            seat_count:form.seat_count,
+            current_seat:0,
+            start_time:form.start_time,
+            start:form.start,
+            end:form.end,
+            price:form.price,
+            venue:form.venue,
+            status:TripStatus::Prepare,
+            message:form.message,
+            plate_number:form.plate_number,
+            car_type:form.car_type,
+            orders:Vec::new(),
+        }
+    }
 
     pub fn add_order(&mut self,o:Order) {
         //todo 
@@ -296,21 +333,6 @@ impl Trip {
         print!("{}", openid);
         false 
     }
-
-    pub fn set_status(&mut self, status:TripStatus) {
-        self.status = format!("{}",status);
-    }
-
-    pub fn get_status(&self) -> TripStatus {
-        match self.status.as_str() {
-            "Prepare" => TripStatus::Prepare,
-            "Full" => TripStatus::Full,
-            "Running" => TripStatus::Running, 
-            "Finish" => TripStatus::Finish, 
-            "Cancel" => TripStatus::Cancel,
-            _ => TripStatus::Finish 
-        }
-    }
 }
 
 
@@ -323,6 +345,21 @@ impl<'t> FromFormValue<'t> for UserType {
             "Passenger" => Ok(UserType::Passenger),
             "Anonymous" => Ok(UserType::Anonymous),
             _ => Err(ServiceError::String("error user type".to_owned()))
+        }
+    }
+}
+
+impl<'t> FromFormValue<'t> for TripStatus {
+    type Error = ServiceError;
+
+    fn from_form_value(from_value: &'t RawStr) -> Result<TripStatus,ServiceError> {
+         match from_value.as_str() {
+            "Prepare" => Ok(TripStatus::Prepare),
+            "Full" => Ok(TripStatus::Full),
+            "Running" => Ok(TripStatus::Running), 
+            "Finish" => Ok(TripStatus::Finish), 
+            "Cancel" => Ok(TripStatus::Cancel),
+            _ => Ok(TripStatus::Finish) 
         }
     }
 }

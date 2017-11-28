@@ -80,4 +80,12 @@ impl Service {
         println!("{:?}", user);
         self.conn.add(user).map(|_| ())
     }
+
+    pub fn publish_trip(&self, trip: entity::Trip) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn get_tel(&self, openid: &str) -> Result<String> {
+        Ok(openid.to_owned())
+    }
 }
