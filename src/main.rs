@@ -2,6 +2,8 @@
 #![plugin(rocket_codegen)]
 
 extern crate rocket;
+#[macro_use]
+extern crate rocket_contrib;
 extern crate pin_che;
 extern crate mongodb;
 
@@ -10,14 +12,11 @@ extern crate redis;
 
 use mongodb::db::ThreadedDatabase;
 use bson::Bson;
-use bson::oid::ObjectId;
 use redis::Commands;
-use pin_che::{entity, db, service};
+use pin_che::{entity, db};
 use pin_che::service::{Result, Service, ServiceError};
-use rocket::request::LenientForm;
-use rocket::response::content;
-
-const OK: content::Json<&'static str> = content::Json("{'ok': true}");
+//use rocket::request::LenientForm;
+use rocket_contrib::{Json, Value};
 
 #[get("/")]
 fn index(conn: db::DbConn, cache: db::CacheConn) -> String {
@@ -43,36 +42,52 @@ fn index(conn: db::DbConn, cache: db::CacheConn) -> String {
 
 fn main() {
     rocket::ignite()
-        .mount("/", routes![index, register_owner, publish_trip])
+        .mount(
+            "/",
+            routes![index, register_owner, publish_trip, test_error],
+        )
         .manage(pin_che::db::init_db_conn())
         .manage(pin_che::db::init_redis())
+        .catch(errors![not_found, noauth])
         .launch();
 }
 
+#[error(404)]
+fn not_found() -> Json<Value> {
+    Json(json!({
+        "status": "error",
+        "reason": "Resource was not found."
+    }))
+}
 
+#[error(401)]
+fn noauth() -> Result<()> {
+    Err(ServiceError::NoAuth)
+}
 
 #[get("/registerOwner?<user>")]
 fn register_owner(
     jwt: entity::JwtUser,
     user: entity::OwnerForm,
     s: Service,
-) -> Result<content::Json<&'static str>> {
-    s.add_user(entity::User::new_owner(jwt.id, jwt.name, user))
-        .map(|_| OK)
+) -> Result<Json<entity::User>> {
+    let owner = entity::User::new_owner(jwt.id, jwt.name, user);
+    s.add_user(&owner).map(|_| Json(owner))
 }
 
-#[get("/publishTrip?<trip>")]
+#[get("/publishTrip?<form>")]
 fn publish_trip(
     jwt: entity::JwtUser,
-    trip: entity::TripForm,
+    form: entity::TripForm,
     s: Service,
-) -> Result<content::Json<&'static str>> {
+) -> Result<Json<entity::Trip>> {
     let tel = s.get_tel(&jwt.id)?;
-    if jwt.role == "Owner" {
-        s.publish_trip(entity::Trip::new(jwt.id, tel, trip)).map(
-            |_| OK,
-        )
-    } else {
-        Err(ServiceError::NoAuth)
-    }
+    let trip = entity::Trip::new(jwt.id, tel, form);
+    s.publish_trip(&trip)?;
+    Ok(Json(trip))
+}
+
+#[get("/test")]
+fn test_error() -> Result<()> {
+    Err(ServiceError::String(format!("{:?}",ServiceError::NoAuth)))
 }

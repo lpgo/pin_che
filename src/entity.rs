@@ -5,7 +5,6 @@ use jwt::{Header,Token};
 use rocket::Outcome;
 use rocket::http::{Status,RawStr};
 use rocket::request::{self, Request, FromRequest, FromFormValue};
-use bson::Bson;
 use bson::oid::ObjectId;
 use service::ServiceError;
 
@@ -178,18 +177,17 @@ impl<'a, 'r> FromRequest<'a, 'r> for JwtUser {
     fn from_request(request: &'a Request<'r>) -> request::Outcome<JwtUser, ServiceError> {
         let keys: Vec<_> = request.headers().get("Authorization").collect();
         if keys.len() != 1 {
-            return Outcome::Failure((Status::BadRequest, ServiceError::NoAuth));
+            return Outcome::Failure((Status::Unauthorized, ServiceError::NoAuth));
         }
         let (_, key) = keys[0].split_at(7);
-        println!("key is {}", key);
         if let Some(user) = JwtUser::from_jwt(key) {
             if user.user_type == "weixin" {
                 Outcome::Success(user)
             } else {
-                Outcome::Failure((Status::BadRequest, ServiceError::NoAuth))
+                Outcome::Failure((Status::Unauthorized, ServiceError::NoAuth))
             }
         } else {
-        	Outcome::Failure((Status::BadRequest, ServiceError::NoAuth))
+        	Outcome::Failure((Status::Unauthorized, ServiceError::NoAuth))
         }
     }
 }

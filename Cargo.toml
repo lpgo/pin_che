@@ -6,6 +6,7 @@ authors = ["lpgo <whereisgirl@126.com>"]
 [dependencies]
 rocket = "0.3.3"
 rocket_codegen = "0.3.3"
+rocket_contrib = "0.3.3"
 config = "*"
 lazy_static = "^0.2.8"
 bson = "0.10.0"

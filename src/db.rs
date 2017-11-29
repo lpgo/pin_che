@@ -11,8 +11,8 @@ use setting;
 use service::{ServiceError, Result};
 use entity;
 use serde::ser::Serialize;
+use serde::de::Deserialize;
 use bson::{self, Document, Bson};
-use bson::oid::ObjectId;
 
 
 pub type Pool = r2d2::Pool<RedisConnectionManager>;
@@ -111,12 +111,12 @@ impl GetName for entity::Admin {
 }
 
 impl DbConn {
-    pub fn add<T>(&self, t: T) -> Result<Bson>
+    pub fn add<T>(&self, t: &T) -> Result<Bson>
     where
         T: GetName + Serialize,
     {
         let coll = self.collection(T::get_name());
-        to_doc(&t)
+        to_doc(t)
             .and_then(|doc| {
                 coll.insert_one(doc, None).map_err(|err| {
                     ServiceError::MongodbError(err)
@@ -139,6 +139,17 @@ impl DbConn {
         coll.delete_one(doc, None)
             .map_err(|err| ServiceError::MongodbError(err))
             .map(|_| ())
+    }
+
+    pub fn get_one<'de, T>(&self, id: &str) -> Result<T>
+    where
+        T: GetName + Deserialize<'de>,
+    {
+        let coll = self.collection(T::get_name());
+        let mut doc = Document::new();
+        doc.insert("_id", id);
+        let doc = coll.find_one(Some(doc), None)??;
+        bson::from_bson::<T>(Bson::Document(doc)).map_err(|err| ServiceError::BsonDecoderError(err))
     }
 }
 
