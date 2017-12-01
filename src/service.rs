@@ -4,14 +4,14 @@ use bson;
 use mongodb;
 use db;
 use entity;
+use redis;
 use rocket::request::{self, FromRequest};
 use rocket::{Request, State, Outcome};
 use rocket::response::{self, Response, Responder};
-
 use rocket::http::ContentType;
-
 use mongodb::db::Database;
 use rocket::http::Status;
+
 
 pub type Result<T> = result::Result<T, ServiceError>;
 
@@ -27,6 +27,7 @@ pub enum ServiceError {
     MongodbError(mongodb::Error),
     BsonOidError(bson::oid::Error),
     NoneError(option::NoneError),
+    RedisError(redis::RedisError),
 }
 
 impl fmt::Display for ServiceError {
@@ -44,6 +45,7 @@ impl fmt::Display for ServiceError {
             ServiceError::MongodbError(ref e) => e.fmt(f),
             ServiceError::BsonOidError(ref e) => e.fmt(f),
             ServiceError::NoneError(ref e) => write!(f, "{:?}", e),
+            ServiceError::RedisError(ref e) => e.fmt(f),
         }
     }
 }
@@ -123,6 +125,13 @@ impl<'r> Responder<'r> for ServiceError {
                     ),
                 );
             },
+            ServiceError::RedisError(ref e) => {
+                builder.status(Status::UnprocessableEntity).sized_body(
+                    Cursor::new(
+                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                    ),
+                );
+            },
         }
         builder.ok()
     }
@@ -177,8 +186,7 @@ impl Service {
     }
 
     pub fn publish_trip(&self, trip: &entity::Trip) -> Result<()> {
-        println!("{:?}", trip);
-        Ok(())
+       self.cache.add_trip(trip)
     }
 
     pub fn get_tel(&self, openid: &str) -> Result<String> {

@@ -7,6 +7,7 @@ use rocket::http::{Status,RawStr};
 use rocket::request::{self, Request, FromRequest, FromFormValue};
 use bson::oid::ObjectId;
 use service::ServiceError;
+use redis;
 
 //车主
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone,FromForm)]
@@ -19,7 +20,7 @@ pub struct User {
     pub plate_number:String,
     pub car_type : String,
     pub car_pic : String,
-    pub refund_count:i32,
+    pub refund_count:i64,
     pub user_type : UserType
 }
 
@@ -50,8 +51,8 @@ pub struct Order {
     pub transaction_id: String,
     pub tel: Option<String>,
     pub status: String,
-    pub price: i32,
-    pub count:i32,
+    pub price: i64,
+    pub count:i64,
     pub start_time: i64
 }
 
@@ -69,12 +70,12 @@ pub struct Trip {
     #[serde(rename = "_id")]
     pub id :String,
     pub openid: String,
-    pub seat_count : i32,
-    pub current_seat : i32,
+    pub seat_count : i64,
+    pub current_seat : i64,
     pub start_time : i64,
     pub start:String,
     pub end:String,
-    pub price:i32,
+    pub price:i64,
     pub venue:String, //出发地点
     pub status:TripStatus,
     pub message:Option<String>,
@@ -86,11 +87,11 @@ pub struct Trip {
 
 #[derive(FromForm)]
 pub struct TripForm {
-    pub seat_count : i32,
+    pub seat_count : i64,
     pub start_time : i64,
     pub start:String,
     pub end:String,
-    pub price:i32,
+    pub price:i64,
     pub venue:String, //集合地点
     pub status:TripStatus,
     pub message:Option<String>,
@@ -112,8 +113,8 @@ pub enum TripStatus {
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub struct ApiResult {
     pub access_token: Option<String>,
-    pub expires_in:Option<i32>,
-    pub errcode:Option<i32>,
+    pub expires_in:Option<i64>,
+    pub errcode:Option<i64>,
     pub errmsg:Option<String>,
     pub refresh_token:Option<String>,
     pub openid:Option<String>,
@@ -125,7 +126,7 @@ pub struct ApiResult {
 pub struct WxUserInfo {
     openid:String,
     nickname: String,
-    sex:i32,
+    sex:i64,
     language:String,
     city:String,
     province:String,
@@ -241,6 +242,12 @@ impl fmt::Display for TripStatus {
     }
 }
 
+impl<'a> redis::ToRedisArgs for &'a TripStatus {
+    fn to_redis_args(&self) -> Vec<Vec<u8>> {
+        vec![format!("{}",self).into_bytes()]
+    }
+}
+
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone,Default)]
 pub struct LoginStatus {
     pub user_type : UserType,
@@ -249,7 +256,7 @@ pub struct LoginStatus {
     pub web_token : Option<String>,
     pub refresh_token : Option<String>,
     pub user:Option<User>,
-    pub code:Option<i32>
+    pub code:Option<i64>
 }
 
 impl User {
@@ -307,7 +314,7 @@ impl Trip {
         print!("{:?}", o);
     }
 
-	pub fn buy_seats(&mut self,count:i32) -> bool {
+	pub fn buy_seats(&mut self,count:i64) -> bool {
 	    if self.current_seat >= count {
 		    self.current_seat -= count;
             true

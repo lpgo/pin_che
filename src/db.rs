@@ -6,7 +6,7 @@ use rocket::{Request, State, Outcome};
 use rocket::http::Status;
 use r2d2;
 use r2d2_redis::RedisConnectionManager;
-use redis::Connection;
+use redis::{self, Connection, PipelineCommands};
 use setting;
 use service::{ServiceError, Result};
 use entity;
@@ -110,6 +110,19 @@ impl GetName for entity::Admin {
     }
 }
 
+fn to_doc<T>(t: &T) -> Result<Document>
+where
+    T: Serialize,
+{
+    bson::to_bson(t)
+        .map_err(|err| ServiceError::BsonEncoderError(err))
+        .and_then(|doc| {
+            doc.as_document().cloned().ok_or(ServiceError::String(
+                "not document".to_string(),
+            ))
+        })
+}
+
 impl DbConn {
     pub fn add<T>(&self, t: &T) -> Result<Bson>
     where
@@ -153,15 +166,41 @@ impl DbConn {
     }
 }
 
-fn to_doc<T>(t: &T) -> Result<Document>
-where
-    T: Serialize,
-{
-    bson::to_bson(t)
-        .map_err(|err| ServiceError::BsonEncoderError(err))
-        .and_then(|doc| {
-            doc.as_document().cloned().ok_or(ServiceError::String(
-                "not document".to_string(),
-            ))
-        })
+impl CacheConn {
+    pub fn add_trip(&self, t: &entity::Trip) -> Result<()> {
+        redis::pipe()
+            .atomic()
+            .hset_multiple(
+                format!("{}:{}", entity::Trip::get_name(), t.id),
+                &[
+                    ("id", &t.id),
+                    ("openid", &t.openid),
+                    ("start", &t.start),
+                    ("end", &t.end),
+                    ("venue", &t.venue),
+                    ("plate_number", &t.plate_number),
+                    ("car_type", &t.car_type),
+                    ("tel", &t.tel),
+                ],
+            )
+            .hset_multiple(
+                format!("{}:{}", entity::Trip::get_name(), t.id),
+                &[
+                    ("seat_count", t.seat_count),
+                    ("current_seat", t.current_seat),
+                    ("start_time", t.start_time),
+                    ("price", t.price),
+                ],
+            )
+            .hset(
+                format!("{}:{}", entity::Trip::get_name(), t.id),
+                "status",
+                &t.status,
+            )
+            .query(&**self)
+            .map(|result: Vec<i32>| {
+                println!("redis add trip result is {:?}", result)
+            })
+            .map_err(|err| ServiceError::RedisError(err))
+    }
 }

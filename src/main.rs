@@ -87,7 +87,8 @@ fn publish_trip(
     Ok(Json(trip))
 }
 
-#[get("/test")]
-fn test_error() -> Result<()> {
-    Err(ServiceError::String(format!("{:?}",ServiceError::NoAuth)))
+#[get("/test?<form>")]
+fn test_error(s: Service, form: entity::TripForm) -> Result<()> {
+    let trip = entity::Trip::new("openid".to_owned(), "1231313".to_owned(), form);
+    s.publish_trip(&trip)
 }
