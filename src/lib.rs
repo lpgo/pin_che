@@ -16,6 +16,7 @@ extern crate rustc_serialize;
 extern crate jwt;
 extern crate crypto;
 extern crate bson;
+extern crate serde_redis;
 
 
 pub mod setting;

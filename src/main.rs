@@ -76,19 +76,14 @@ fn register_owner(
 }
 
 #[get("/publishTrip?<form>")]
-fn publish_trip(
-    jwt: entity::JwtUser,
-    form: entity::TripForm,
-    s: Service,
-) -> Result<Json<entity::Trip>> {
-    let tel = s.get_tel(&jwt.id)?;
-    let trip = entity::Trip::new(jwt.id, tel, form);
+fn publish_trip(form: entity::TripForm, s: Service) -> Result<Json<entity::Trip>> {
+    //let tel = s.get_tel(&jwt.id)?;
+    let trip = entity::Trip::new("openid".to_owned(), "tel".to_owned(), form);
     s.publish_trip(&trip)?;
     Ok(Json(trip))
 }
 
-#[get("/test?<form>")]
-fn test_error(s: Service, form: entity::TripForm) -> Result<()> {
-    let trip = entity::Trip::new("openid".to_owned(), "1231313".to_owned(), form);
-    s.publish_trip(&trip)
+#[get("/test/<id>")]
+fn test_error(s: Service, id: String) -> Result<Json<entity::Trip>> {
+    s.cache.get_object(&id).map(|t: entity::Trip| Json(t))
 }

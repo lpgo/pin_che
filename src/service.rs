@@ -5,6 +5,7 @@ use mongodb;
 use db;
 use entity;
 use redis;
+use serde_redis;
 use rocket::request::{self, FromRequest};
 use rocket::{Request, State, Outcome};
 use rocket::response::{self, Response, Responder};
@@ -28,6 +29,7 @@ pub enum ServiceError {
     BsonOidError(bson::oid::Error),
     NoneError(option::NoneError),
     RedisError(redis::RedisError),
+    RedisDecodeError(serde_redis::decode::Error),
 }
 
 impl fmt::Display for ServiceError {
@@ -46,6 +48,7 @@ impl fmt::Display for ServiceError {
             ServiceError::BsonOidError(ref e) => e.fmt(f),
             ServiceError::NoneError(ref e) => write!(f, "{:?}", e),
             ServiceError::RedisError(ref e) => e.fmt(f),
+            ServiceError::RedisDecodeError(ref e) => e.fmt(f),
         }
     }
 }
@@ -132,6 +135,13 @@ impl<'r> Responder<'r> for ServiceError {
                     ),
                 );
             },
+            ServiceError::RedisDecodeError(ref e) => {
+                builder.status(Status::UnprocessableEntity).sized_body(
+                    Cursor::new(
+                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                    ),
+                );
+            },
         }
         builder.ok()
     }
@@ -139,7 +149,32 @@ impl<'r> Responder<'r> for ServiceError {
 
 impl error::Error for ServiceError {
     fn description(&self) -> &str {
-        "pinche service error"
+        match *self {
+            ServiceError::NoAuth => "you are not auth!",
+            ServiceError::NotCount => "you are not enough count!",
+            ServiceError::TimeOut => "for trip start have not half hours,you can not refund!",
+            ServiceError::DontHaveEnoughSeats => "this trip have not enough seats!",
+            ServiceError::String(ref s) => s.as_str(),
+            ServiceError::BsonEncoderError(ref e) => e.description(),
+            ServiceError::BsonDecoderError(ref e) => e.description(),
+            ServiceError::MongodbError(ref e) => e.description(),
+            ServiceError::BsonOidError(ref e) => e.description(),
+            ServiceError::NoneError(_) => "option is None",
+            ServiceError::RedisError(ref e) => e.description(),
+            ServiceError::RedisDecodeError(ref e) => e.description(),
+        }
+    }
+
+    fn cause(&self) -> Option<&error::Error> {
+        match *self {
+            ServiceError::BsonEncoderError(ref e) => Some(e),
+            ServiceError::BsonDecoderError(ref e) => Some(e),
+            ServiceError::MongodbError(ref e) => Some(e),
+            ServiceError::BsonOidError(ref e) => Some(e),
+            ServiceError::RedisError(ref e) => Some(e),
+            ServiceError::RedisDecodeError(ref e) => Some(e),
+            _ => None,
+        }
     }
 }
 
@@ -155,9 +190,15 @@ impl convert::From<option::NoneError> for ServiceError {
     }
 }
 
+impl convert::From<redis::RedisError> for ServiceError {
+    fn from(err: redis::RedisError) -> Self {
+        ServiceError::RedisError(err)
+    }
+}
+
 pub struct Service {
     conn: db::DbConn,
-    cache: db::CacheConn,
+    pub cache: db::CacheConn,
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for Service {

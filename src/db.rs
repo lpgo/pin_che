@@ -6,12 +6,13 @@ use rocket::{Request, State, Outcome};
 use rocket::http::Status;
 use r2d2;
 use r2d2_redis::RedisConnectionManager;
-use redis::{self, Connection, PipelineCommands};
+use redis::{self, Connection, PipelineCommands, Commands};
 use setting;
 use service::{ServiceError, Result};
 use entity;
 use serde::ser::Serialize;
 use serde::de::Deserialize;
+use serde_redis::RedisDeserialize;
 use bson::{self, Document, Bson};
 
 
@@ -173,7 +174,7 @@ impl CacheConn {
             .hset_multiple(
                 format!("{}:{}", entity::Trip::get_name(), t.id),
                 &[
-                    ("id", &t.id),
+                    ("_id", &t.id),
                     ("openid", &t.openid),
                     ("start", &t.start),
                     ("end", &t.end),
@@ -202,5 +203,15 @@ impl CacheConn {
                 println!("redis add trip result is {:?}", result)
             })
             .map_err(|err| ServiceError::RedisError(err))
+    }
+
+    pub fn get_object<'de, T>(&self, id: &str) -> Result<T>
+    where
+        T: GetName + Deserialize<'de>,
+    {
+        let value: redis::Value = self.hgetall(format!("{}:{}", "Trip", id))?;
+        value.deserialize().map_err(
+            |err| ServiceError::RedisDecodeError(err),
+        )
     }
 }

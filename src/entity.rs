@@ -82,7 +82,6 @@ pub struct Trip {
     pub plate_number: String,
     pub tel: String,
     pub car_type: String,
-    pub orders:Vec<Order>
 }
 
 #[derive(FromForm)]
@@ -305,39 +304,9 @@ impl Trip {
             message:form.message,
             plate_number:form.plate_number,
             car_type:form.car_type,
-            orders:Vec::new(),
         }
     }
 
-    pub fn add_order(&mut self,o:Order) {
-        //todo 
-        print!("{:?}", o);
-    }
-
-	pub fn buy_seats(&mut self,count:i64) -> bool {
-	    if self.current_seat >= count {
-		    self.current_seat -= count;
-            true
-	    } else {
-            false
-	    }
-	}
-
-    pub fn check_orders_done(&self) -> bool {
-    	//todo 
-        false
-    }
-
-    pub fn set_all_status(&self,status:OrderStatus) {
-        //todo 
-        print!("{}", status);
-    }
-
-    pub fn has_order(&self,openid:&str) -> bool {
-        //todo
-        print!("{}", openid);
-        false 
-    }
 }
 
 
