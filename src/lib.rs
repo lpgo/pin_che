@@ -17,9 +17,14 @@ extern crate jwt;
 extern crate crypto;
 extern crate bson;
 extern crate serde_redis;
+extern crate futures;
+extern crate hyper;
+extern crate tokio_core;
+extern crate hyper_tls;
 
 
 pub mod setting;
 pub mod db;
 pub mod entity;
 pub mod service;
+pub mod external;

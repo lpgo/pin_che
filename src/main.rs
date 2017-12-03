@@ -44,7 +44,13 @@ fn main() {
     rocket::ignite()
         .mount(
             "/",
-            routes![index, register_owner, publish_trip, test_error],
+            routes![
+                index,
+                register_owner,
+                publish_trip,
+                test_error,
+                test_request,
+            ],
         )
         .manage(pin_che::db::init_db_conn())
         .manage(pin_che::db::init_redis())
@@ -86,4 +92,9 @@ fn publish_trip(form: entity::TripForm, s: Service) -> Result<Json<entity::Trip>
 #[get("/test/<id>")]
 fn test_error(s: Service, id: String) -> Result<Json<entity::Trip>> {
     s.cache.get_object(&id).map(|t: entity::Trip| Json(t))
+}
+
+#[get("/test/request")]
+fn test_request() -> Result<()> {
+    pin_che::external::test()
 }

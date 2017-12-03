@@ -1,4 +1,4 @@
-use std::{fmt, result, error, convert, option};
+use std::{self,fmt, result, error, convert, option};
 use std::io::Cursor;
 use bson;
 use mongodb;
@@ -12,6 +12,7 @@ use rocket::response::{self, Response, Responder};
 use rocket::http::ContentType;
 use mongodb::db::Database;
 use rocket::http::Status;
+use hyper;
 
 
 pub type Result<T> = result::Result<T, ServiceError>;
@@ -30,6 +31,9 @@ pub enum ServiceError {
     NoneError(option::NoneError),
     RedisError(redis::RedisError),
     RedisDecodeError(serde_redis::decode::Error),
+    StdIoError(std::io::Error),
+    HyperUriError(hyper::error::UriError),
+    HyperError(hyper::Error),
 }
 
 impl fmt::Display for ServiceError {
@@ -49,6 +53,9 @@ impl fmt::Display for ServiceError {
             ServiceError::NoneError(ref e) => write!(f, "{:?}", e),
             ServiceError::RedisError(ref e) => e.fmt(f),
             ServiceError::RedisDecodeError(ref e) => e.fmt(f),
+            ServiceError::StdIoError(ref e) => e.fmt(f),
+            ServiceError::HyperUriError(ref e) => e.fmt(f),
+            ServiceError::HyperError(ref e) => e.fmt(f),
         }
     }
 }
@@ -142,6 +149,27 @@ impl<'r> Responder<'r> for ServiceError {
                     ),
                 );
             },
+            ServiceError::StdIoError(ref e) => {
+                builder.status(Status::UnprocessableEntity).sized_body(
+                    Cursor::new(
+                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                    ),
+                );
+            },
+            ServiceError::HyperUriError(ref e) => {
+                builder.status(Status::UnprocessableEntity).sized_body(
+                    Cursor::new(
+                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                    ),
+                );
+            },
+            ServiceError::HyperError(ref e) => {
+                builder.status(Status::UnprocessableEntity).sized_body(
+                    Cursor::new(
+                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                    ),
+                );
+            },
         }
         builder.ok()
     }
@@ -162,6 +190,9 @@ impl error::Error for ServiceError {
             ServiceError::NoneError(_) => "option is None",
             ServiceError::RedisError(ref e) => e.description(),
             ServiceError::RedisDecodeError(ref e) => e.description(),
+            ServiceError::StdIoError(ref e) => e.description(),
+            ServiceError::HyperUriError(ref e) => e.description(),
+            ServiceError::HyperError(ref e) => e.description(),
         }
     }
 
@@ -173,6 +204,9 @@ impl error::Error for ServiceError {
             ServiceError::BsonOidError(ref e) => Some(e),
             ServiceError::RedisError(ref e) => Some(e),
             ServiceError::RedisDecodeError(ref e) => Some(e),
+            ServiceError::StdIoError(ref e) => Some(e),
+            ServiceError::HyperUriError(ref e) => Some(e),
+            ServiceError::HyperError(ref e) => Some(e),
             _ => None,
         }
     }
@@ -193,6 +227,24 @@ impl convert::From<option::NoneError> for ServiceError {
 impl convert::From<redis::RedisError> for ServiceError {
     fn from(err: redis::RedisError) -> Self {
         ServiceError::RedisError(err)
+    }
+}
+
+impl convert::From<std::io::Error> for ServiceError {
+    fn from(err: std::io::Error) -> Self {
+        ServiceError::StdIoError(err)
+    }
+}
+
+impl convert::From<hyper::error::UriError> for ServiceError {
+    fn from(err: hyper::error::UriError) -> Self {
+        ServiceError::HyperUriError(err)
+    }
+}
+
+impl convert::From<hyper::Error> for ServiceError {
+    fn from(err: hyper::Error) -> Self {
+        ServiceError::HyperError(err)
     }
 }
 
