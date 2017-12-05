@@ -11,7 +11,7 @@ pub fn test() -> Result<()> {
     let client = Client::configure()
         .connector(HttpsConnector::new(4, &handle).unwrap())
         .build(&handle);
-    let uri = "https://www.baidu.com".parse()?;
+    let uri = "https://www.github.com".parse()?;
     let work = client.get(uri).and_then(|res| {
         println!("Response: {}", res.status());
 

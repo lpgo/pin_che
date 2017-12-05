@@ -9,51 +9,50 @@ extern crate mongodb;
 
 extern crate bson;
 extern crate redis;
+extern crate tokio_timer;
+extern crate futures;
 
-use mongodb::db::ThreadedDatabase;
-use bson::Bson;
-use redis::Commands;
 use pin_che::{entity, db};
 use pin_che::service::{Result, Service, ServiceError};
 //use rocket::request::LenientForm;
 use rocket_contrib::{Json, Value};
-
-#[get("/")]
-fn index(conn: db::DbConn, cache: db::CacheConn) -> String {
-    let coll = conn.collection("admin");
-    let name: String = cache.get("name").unwrap();
-    println!("redis get name is {}", &name);
-
-    let admin = entity::Admin {
-        id: Some("sdfsf".to_owned()),
-        name: String::from("lp"),
-        pwd: String::from("123456"),
-    };
-
-    let serialized_person = bson::to_bson(&admin).unwrap(); // Serialize
-
-    if let Bson::Document(document) = serialized_person {
-        coll.insert_one(document, None).unwrap(); // Insert into a MongoDB collection
-    } else {
-        println!("Error converting the BSON object into a MongoDB document");
-    }
-    name
-}
+use std::time::Duration;
+use tokio_timer::Timer;
+use futures::{Stream, Future};
+use std::thread;
 
 fn main() {
+    let database = pin_che::db::init_db_conn();
+    let pool = pin_che::db::init_redis();
+    let service = Service::new(
+        db::DbConn(database.clone()),
+        db::CacheConn(pool.get().unwrap()),
+    );
+
+    thread::spawn(|| {
+        println!("start timer");
+        let timer = Timer::default();
+        let interval = timer.interval(Duration::from_millis(1000));
+        interval
+            .for_each(move |_| {
+                service.test();
+                Ok(())
+            })
+            .wait()
+            .unwrap();
+    });
+
     rocket::ignite()
         .mount(
             "/",
             routes![
-                index,
                 register_owner,
                 publish_trip,
-                test_error,
                 test_request,
             ],
         )
-        .manage(pin_che::db::init_db_conn())
-        .manage(pin_che::db::init_redis())
+        .manage(database)
+        .manage(pool)
         .catch(errors![not_found, noauth])
         .launch();
 }
@@ -87,11 +86,6 @@ fn publish_trip(form: entity::TripForm, s: Service) -> Result<Json<entity::Trip>
     let trip = entity::Trip::new("openid".to_owned(), "tel".to_owned(), form);
     s.publish_trip(&trip)?;
     Ok(Json(trip))
-}
-
-#[get("/test/<id>")]
-fn test_error(s: Service, id: String) -> Result<Json<entity::Trip>> {
-    s.cache.get_object(&id).map(|t: entity::Trip| Json(t))
 }
 
 #[get("/test/request")]

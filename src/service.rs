@@ -250,7 +250,7 @@ impl convert::From<hyper::Error> for ServiceError {
 
 pub struct Service {
     conn: db::DbConn,
-    pub cache: db::CacheConn,
+    cache: db::CacheConn,
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for Service {
@@ -273,6 +273,10 @@ impl<'a, 'r> FromRequest<'a, 'r> for Service {
 }
 
 impl Service {
+    pub fn new(conn:db::DbConn,cache:db::CacheConn) -> Self {
+        Service{conn,cache}
+    }
+
     pub fn add_user(&self, user: &entity::User) -> Result<()> {
         println!("{:?}", user);
         self.conn.add(user).map(|_| ())
@@ -286,5 +290,9 @@ impl Service {
         self.conn.get_one::<entity::User>(openid).map(
             |user| user.tel,
         )
+    }
+
+    pub fn test(&self) {
+        println!("service test");
     }
 }
