@@ -9,60 +9,21 @@ use bson::oid::ObjectId;
 use service::ServiceError;
 use redis;
 
-//车主
-#[derive(PartialEq, Debug, Serialize, Deserialize,Clone,FromForm)]
-pub struct User {
-	#[serde(rename = "_id")]
-    pub openid :String,
-    pub tel:String,
-    pub name: String,
-    pub card_id: String,
-    pub plate_number:String,
-    pub car_type : String,
-    pub car_pic : String,
-    pub refund_count:i64,
-    pub user_type : UserType
-}
-
-#[derive(FromForm)]
-pub struct OwnerForm {
-    pub tel:String,
-    pub card_id: String,
-    pub plate_number:String,
-    pub car_type : String,
-    pub car_pic : String,
-    pub code : String,  //短信验证码
-}
-
-#[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
-pub struct Admin {
-   #[serde(rename = "_id")]
-    pub id :Option<String>,
-    pub name:String,
-    pub pwd:String
-}
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
 pub struct Order {
     #[serde(rename = "_id")]
-    pub id :Option<String>,
+    pub id :String,
     pub openid: String,
     pub trip_id: String,
-    pub order_id: String,
-    pub transaction_id: String,
+    pub order_id: Option<String>,   //微信支付参数 
+    pub transaction_id: Option<String>,//微信支付参数 
     pub tel: Option<String>,
-    pub status: String,
+    pub status: OrderStatus,
     pub price: i64,
     pub count:i64,
     pub start_time: i64
 }
 
-#[derive(PartialEq, Debug, Serialize, Deserialize,Default,Clone)]
-pub struct Complain {
-    #[serde(rename = "_id")]
-    pub id :Option<String>,
-    pub openid: String,
-    pub content: String
-}
 
 
 #[derive(PartialEq, Debug, Serialize, Deserialize,Default,Clone)]
@@ -92,10 +53,10 @@ pub struct TripForm {
     pub end:String,
     pub price:i64,
     pub venue:String, //集合地点
-    pub status:TripStatus,
     pub message:Option<String>,
     pub plate_number: String,
     pub car_type: String,
+    pub tel: String,
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
@@ -107,6 +68,13 @@ pub enum TripStatus {
     Cancel
 }
 
+#[derive(PartialEq, Debug, Serialize, Deserialize,Default,Clone)]
+pub struct Complain {
+    #[serde(rename = "_id")]
+    pub id :Option<String>,
+    pub openid: String,
+    pub content: String
+}
 
 //weixin api result
 #[derive(PartialEq, Debug, Serialize, Deserialize)]
@@ -135,19 +103,10 @@ pub struct WxUserInfo {
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
-pub enum UserType {
-    Owner,
-    Passenger,
-    Anonymous
-}
-
-#[derive(PartialEq, Debug, Serialize, Deserialize,Clone)]
 pub enum OrderStatus {
-    PaySuccess,
-    PayFail,
+    Unpaid,
+    Paid,
     Submit,
-    Refund,
-    Request     //request refund
 }
 
 #[derive(Default, RustcDecodable, RustcEncodable, Debug)]
@@ -192,40 +151,24 @@ impl<'a, 'r> FromRequest<'a, 'r> for JwtUser {
     }
 }
 
-
-impl Default for UserType {
-    // add code here
-    fn default() -> UserType {
-        UserType::Anonymous
-    }
-}
-
 impl Default for TripStatus {
-    // add code here
     fn default() -> TripStatus {
         TripStatus::Prepare
     }
 }
 
-
-impl fmt::Display for UserType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            UserType::Owner => write!(f, "Owner"),
-            UserType::Passenger => write!(f, "Passenger"),
-            UserType::Anonymous => write!(f, "Anonymous")
-        }
+impl Default for OrderStatus {
+    fn default() -> OrderStatus {
+        OrderStatus::Unpaid
     }
 }
 
 impl fmt::Display for OrderStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            OrderStatus::PaySuccess => write!(f, "PaySuccess"),
-            OrderStatus::PayFail => write!(f, "PayFail"),
+            OrderStatus::Unpaid => write!(f, "Unpaid"),
+            OrderStatus::Paid => write!(f, "Paid"),
             OrderStatus::Submit => write!(f, "Submit"),
-            OrderStatus::Request => write!(f, "Request"),
-            OrderStatus::Refund => write!(f, "Refund")
         }
     }
 }
@@ -247,54 +190,20 @@ impl<'a> redis::ToRedisArgs for &'a TripStatus {
     }
 }
 
-#[derive(PartialEq, Debug, Serialize, Deserialize,Clone,Default)]
-pub struct LoginStatus {
-    pub user_type : UserType,
-    pub openid : String,
-    pub name : Option<String>,
-    pub web_token : Option<String>,
-    pub refresh_token : Option<String>,
-    pub user:Option<User>,
-    pub code:Option<i64>
-}
-
-impl User {
-    pub fn new_owner(openid:String,name:String,owner:OwnerForm) -> User {
-       User{openid,
-        name,
-        tel:owner.tel,
-        card_id:owner.card_id,
-        plate_number:owner.plate_number,
-        car_type:owner.car_type,
-        car_pic:owner.car_pic,
-        user_type:UserType::Owner,
-        refund_count:2}
-    }
-}
-
-
-impl Order {
-    pub fn get_status(&self) -> OrderStatus {
-        match self.status.as_str() {
-            "PayFail" => OrderStatus::PayFail,
-            "PaySuccess" => OrderStatus::PaySuccess,
-            "Submit" => OrderStatus::Submit,
-            "Refund" => OrderStatus::Refund,
-            "Request" => OrderStatus::Request,
-            _ => OrderStatus::PayFail
-        }
+impl<'a> redis::ToRedisArgs for &'a OrderStatus {
+    fn to_redis_args(&self) -> Vec<Vec<u8>> {
+        vec![format!("{}",self).into_bytes()]
     }
 }
 
 impl Trip {
-
-    pub fn new(openid:String,tel:String,form:TripForm) -> Trip{
+    pub fn new(openid:String,form:TripForm) -> Trip{
         Trip{
             openid,
-            tel,
+            tel:form.tel,
             id:ObjectId::new().unwrap().to_hex(),
             seat_count:form.seat_count,
-            current_seat:0,
+            current_seat:form.seat_count,
             start_time:form.start_time,
             start:form.start,
             end:form.end,
@@ -306,18 +215,34 @@ impl Trip {
             car_type:form.car_type,
         }
     }
+}
 
+impl Order {
+    pub fn new(trip:Trip, openid:String,count:i64,tel:Option<String>) -> Self {
+        Order{
+            id:ObjectId::new().unwrap().to_hex(),
+            trip_id:trip.id,
+            openid,
+            order_id:None,
+            transaction_id:None,
+            tel,
+            status:OrderStatus::Unpaid,
+            count,
+            price:trip.price,
+            start_time:trip.start_time,
+        }
+    }
 }
 
 
-impl<'t> FromFormValue<'t> for UserType {
+impl<'t> FromFormValue<'t> for OrderStatus {
     type Error = ServiceError;
 
-    fn from_form_value(from_value: &'t RawStr) -> Result<UserType,ServiceError> {
+    fn from_form_value(from_value: &'t RawStr) -> Result<OrderStatus,ServiceError> {
          match from_value.as_str() {
-            "Owner" => Ok(UserType::Owner),
-            "Passenger" => Ok(UserType::Passenger),
-            "Anonymous" => Ok(UserType::Anonymous),
+            "Unpaid" => Ok(OrderStatus::Unpaid),
+            "Paid" => Ok(OrderStatus::Paid),
+            "Submit" => Ok(OrderStatus::Submit),
             _ => Err(ServiceError::String("error user type".to_owned()))
         }
     }

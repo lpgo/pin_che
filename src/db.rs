@@ -81,12 +81,6 @@ impl Deref for CacheConn {
     }
 }
 
-impl GetName for entity::User {
-    fn get_name() -> &'static str {
-        "User"
-    }
-}
-
 impl GetName for entity::Order {
     fn get_name() -> &'static str {
         "Order"
@@ -102,12 +96,6 @@ impl GetName for entity::Trip {
 impl GetName for entity::Complain {
     fn get_name() -> &'static str {
         "Complain"
-    }
-}
-
-impl GetName for entity::Admin {
-    fn get_name() -> &'static str {
-        "Admin"
     }
 }
 
@@ -169,8 +157,9 @@ impl DbConn {
 
 impl CacheConn {
     pub fn add_trip(&self, t: &entity::Trip) -> Result<()> {
-        redis::pipe()
-            .atomic()
+        println!("{:?}", t);
+        let mut pipe = redis::pipe();
+        pipe.atomic()
             .hset_multiple(
                 format!("{}:{}", entity::Trip::get_name(), t.id),
                 &[
@@ -197,12 +186,67 @@ impl CacheConn {
                 format!("{}:{}", entity::Trip::get_name(), t.id),
                 "status",
                 &t.status,
-            )
-            .query(&**self)
+            );
+        if let Some(ref msg) = t.message {
+            pipe.hset(
+                format!("{}:{}", entity::Trip::get_name(), t.id),
+                "message",
+                msg,
+            );
+        }
+        pipe.query(&**self)
             .map(|result: Vec<i32>| {
                 println!("redis add trip result is {:?}", result)
             })
             .map_err(|err| ServiceError::RedisError(err))
+    }
+
+    pub fn add_order(&self, order: &entity::Order) -> Result<()> {
+        let trip_key = format!("{}:{}", entity::Trip::get_name(), order.trip_id);
+        redis::transaction(&**self, &[&trip_key], |pipe| {
+            println!("trip key is {}", &trip_key);
+            let count: i64 = self.hget(&trip_key, "current_seat")?;
+            if count < order.count {
+                return pipe.query(&**self).map(|_: Vec<i32>| Some(false));
+            }
+            pipe.hincr(&trip_key, "current_seat", -order.count)
+                .hset_multiple(
+                    format!("{}:{}", entity::Order::get_name(), order.id),
+                    &[
+                        ("_id", &order.id),
+                        ("openid", &order.openid),
+                        ("trip_id", &order.trip_id),
+                    ],
+                )
+                .hset_multiple(
+                    format!("{}:{}", entity::Order::get_name(), order.id),
+                    &[
+                        ("order_id", order.order_id.as_ref()),
+                        ("transaction_id", order.transaction_id.as_ref()),
+                        ("tel", order.tel.as_ref()),
+                    ],
+                )
+                .hset_multiple(
+                    format!("{}:{}", entity::Order::get_name(), order.id),
+                    &[
+                        ("price", order.price),
+                        ("count", order.count),
+                        ("start_time", order.start_time),
+                    ],
+                )
+                .hset(
+                    format!("{}:{}", entity::Order::get_name(), order.id),
+                    "status",
+                    &order.status,
+                )
+                .query(&**self)
+                .map(|_: Vec<i32>| Some(true))
+        }).map_err(|err| ServiceError::RedisError(err))
+            .and_then(|buy| if buy {
+                Ok(())
+            } else {
+                Err(ServiceError::DontHaveEnoughSeats)
+            })
     }
 
     pub fn get_object<'de, T>(&self, id: &str) -> Result<T>

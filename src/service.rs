@@ -68,105 +68,105 @@ impl<'r> Responder<'r> for ServiceError {
             ServiceError::NoAuth => {
                 builder.status(Status::Unauthorized).sized_body(
                     Cursor::new(
-                        r#"{"status": "error", "reason": "Unauthorized, please login"}"#,
+                        r#"{"status": "ok", "reason": "Unauthorized, please login"}"#,
                     ),
                 );
             }
             ServiceError::NotCount => {
                 builder.status(Status::NotAcceptable).sized_body(
                     Cursor::new(
-                        r#"{"status": "error", "reason": "you are not enough count!"}"#,
+                        r#"{"status": "ok", "reason": "you are not enough count!"}"#,
                     ),
                 );
             },
             ServiceError::TimeOut => {
                 builder.status(Status::NotAcceptable).sized_body(
                     Cursor::new(
-                        r#"{"status": "error", "reason": "for trip start have not half hours,you can not refund!"}"#,
+                        r#"{"status": "ok", "reason": "for trip start have not half hours,you can not refund!"}"#,
                     ),
                 );
             },
             ServiceError::DontHaveEnoughSeats => {
                 builder.status(Status::NotAcceptable).sized_body(
                     Cursor::new(
-                        r#"{"status": "error", "reason": "this trip have not enough seats!"}"#,
+                        r#"{"status": "ok", "reason": "this trip have not enough seats!"}"#,
                     ),
                 );
             },
             ServiceError::String(ref s) => {
                 builder.status(Status::BadRequest).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{}\"}}",s),
+                        format!("{{\"status\":\"ok\",\"reason\":\"{}\"}}",s),
                     ),
                 );
             },
             ServiceError::BsonEncoderError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"BsonEncoderError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::BsonDecoderError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"BsonDecoderError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::MongodbError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"MongodbError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::BsonOidError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"BsonOidError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::NoneError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"NoneError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::RedisError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"RedisError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::RedisDecodeError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"RedisDecodeError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::StdIoError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"StdIoError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::HyperUriError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"HyperUriError: {:?}\"}}",e),
                     ),
                 );
             },
             ServiceError::HyperError(ref e) => {
                 builder.status(Status::UnprocessableEntity).sized_body(
                     Cursor::new(
-                        format!("{{\"status\":\"error\",\"reason\":\"{:?}\"}}",e),
+                        format!("{{\"status\":\"error\",\"reason\":\"HyperError: {:?}\"}}",e),
                     ),
                 );
             },
@@ -277,22 +277,17 @@ impl Service {
         Service{conn,cache}
     }
 
-    pub fn add_user(&self, user: &entity::User) -> Result<()> {
-        println!("{:?}", user);
-        self.conn.add(user).map(|_| ())
-    }
-
     pub fn publish_trip(&self, trip: &entity::Trip) -> Result<()> {
        self.cache.add_trip(trip)
     }
 
-    pub fn get_tel(&self, openid: &str) -> Result<String> {
-        self.conn.get_one::<entity::User>(openid).map(
-            |user| user.tel,
-        )
+    pub fn apply_trip(&self, trip_id:String, openid:String, count:i64, tel:Option<String>) -> Result<entity::Order>{
+        self.cache.get_object::<entity::Trip>(&trip_id)
+            .map(|trip|entity::Order::new(trip,openid,count,tel))
+            .and_then(|order| self.cache.add_order(&order).map(|_|order))
     }
 
     pub fn test(&self) {
-        println!("service test");
+       
     }
 }

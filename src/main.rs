@@ -30,7 +30,6 @@ fn main() {
     );
 
     thread::spawn(|| {
-        println!("start timer");
         let timer = Timer::default();
         let interval = timer.interval(Duration::from_millis(1000));
         interval
@@ -46,9 +45,9 @@ fn main() {
         .mount(
             "/",
             routes![
-                register_owner,
                 publish_trip,
                 test_request,
+                apply_trip,
             ],
         )
         .manage(database)
@@ -60,7 +59,7 @@ fn main() {
 #[error(404)]
 fn not_found() -> Json<Value> {
     Json(json!({
-        "status": "error",
+        "status": "error",   //ok表示逻辑错误，系统运行正常；error表示系统内部运行错误（可能是参数解析错误）
         "reason": "Resource was not found."
     }))
 }
@@ -70,22 +69,26 @@ fn noauth() -> Result<()> {
     Err(ServiceError::NoAuth)
 }
 
-#[get("/registerOwner?<user>")]
-fn register_owner(
-    jwt: entity::JwtUser,
-    user: entity::OwnerForm,
-    s: Service,
-) -> Result<Json<entity::User>> {
-    let owner = entity::User::new_owner(jwt.id, jwt.name, user);
-    s.add_user(&owner).map(|_| Json(owner))
-}
-
 #[get("/publishTrip?<form>")]
 fn publish_trip(form: entity::TripForm, s: Service) -> Result<Json<entity::Trip>> {
     //let tel = s.get_tel(&jwt.id)?;
-    let trip = entity::Trip::new("openid".to_owned(), "tel".to_owned(), form);
+    let trip = entity::Trip::new("openid".to_owned(), form);
     s.publish_trip(&trip)?;
     Ok(Json(trip))
+}
+
+#[get("/applyTrip/<id>/<count>/<tel>")]
+fn apply_trip(
+    id: String,
+    count: i64,
+    tel: Option<String>,
+    s: Service,
+) -> Result<Json<entity::Order>> {
+    s.apply_trip(id, "openid".to_owned(), count, tel).map(
+        |order| {
+            Json(order)
+        },
+    )
 }
 
 #[get("/test/request")]
