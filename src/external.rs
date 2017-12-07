@@ -22,3 +22,8 @@ pub fn test() -> Result<()> {
     core.run(work)?;
     Ok(())
 }
+
+pub fn refund(order_id: &str, transaction_id: &str, refund_fee: i32) -> Result<()> {
+    println!("{}{}{}", order_id, transaction_id, refund_fee);
+    Ok(())
+}

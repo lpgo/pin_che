@@ -15,6 +15,7 @@ pub struct Order {
     pub id :String,
     pub openid: String,
     pub trip_id: String,
+    pub trip_owner: String,
     pub order_id: Option<String>,   //微信支付参数 
     pub transaction_id: Option<String>,//微信支付参数 
     pub tel: Option<String>,
@@ -222,6 +223,7 @@ impl Order {
         Order{
             id:ObjectId::new().unwrap().to_hex(),
             trip_id:trip.id,
+            trip_owner:trip.openid,
             openid,
             order_id:None,
             transaction_id:None,

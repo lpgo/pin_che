@@ -4,6 +4,7 @@ use bson;
 use mongodb;
 use db;
 use entity;
+use external;
 use redis;
 use serde_redis;
 use rocket::request::{self, FromRequest};
@@ -14,7 +15,7 @@ use mongodb::db::Database;
 use rocket::http::Status;
 use hyper;
 
-
+  
 pub type Result<T> = result::Result<T, ServiceError>;
 
 #[derive(Debug)]
@@ -23,7 +24,7 @@ pub enum ServiceError {
     DontHaveEnoughSeats, //没有足够的座位
     NoAuth,
     TimeOut, //距离出发时间不足半小时
-    NotCount, //没有足够的使用次数
+    TripNotYours, //你不是车主
     BsonEncoderError(bson::EncoderError),
     BsonDecoderError(bson::DecoderError),
     MongodbError(mongodb::Error),
@@ -40,7 +41,7 @@ impl fmt::Display for ServiceError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ServiceError::NoAuth => write!(f, "you are not auth!"),
-            ServiceError::NotCount => write!(f, "you are not enough count!"),
+            ServiceError::TripNotYours => write!(f, "this trip is not yours, you can't discount"),
             ServiceError::TimeOut => {
                 write!(f, "for trip start have not half hours,you can not refund!")
             }
@@ -72,10 +73,10 @@ impl<'r> Responder<'r> for ServiceError {
                     ),
                 );
             }
-            ServiceError::NotCount => {
+            ServiceError::TripNotYours => {
                 builder.status(Status::NotAcceptable).sized_body(
                     Cursor::new(
-                        r#"{"status": "ok", "reason": "you are not enough count!"}"#,
+                        r#"{"status": "ok", "reason": "this trip is not yours, you can't discount"}"#,
                     ),
                 );
             },
@@ -179,7 +180,7 @@ impl error::Error for ServiceError {
     fn description(&self) -> &str {
         match *self {
             ServiceError::NoAuth => "you are not auth!",
-            ServiceError::NotCount => "you are not enough count!",
+            ServiceError::TripNotYours => "this trip is not yours",
             ServiceError::TimeOut => "for trip start have not half hours,you can not refund!",
             ServiceError::DontHaveEnoughSeats => "this trip have not enough seats!",
             ServiceError::String(ref s) => s.as_str(),
@@ -290,6 +291,12 @@ impl Service {
     pub fn pay(&self,order_id:String) -> Result<()> {
         self.cache.pay_order(order_id)
     }
+
+    pub fn discount(&self,order_id:String,fee:i32) -> Result<()> {
+        let openid = "openid".to_owned();  //?
+        self.cache.change_order_price(&order_id,&openid,-fee)
+            .and_then(|transaction_id|external::refund(&order_id,&transaction_id,fee))
+    }  
 
     pub fn test(&self) {
        

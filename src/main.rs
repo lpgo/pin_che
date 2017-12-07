@@ -50,6 +50,8 @@ fn main() {
                 publish_trip,
                 test_request,
                 apply_trip,
+                pay,
+                discount,
             ],
         )
         .manage(database)
@@ -91,6 +93,17 @@ fn apply_trip(
             Json(order)
         },
     )
+}
+
+//微信支付回调（通过其他服务）
+#[get("/pay/<id>")]
+fn pay(id: String, s: Service) -> Result<()> {
+    s.pay(id)
+}
+
+#[get("/discount/<id>/<fee>")]
+fn discount(id: String, fee: i32, s: Service) -> Result<()> {
+    s.discount(id, fee)
 }
 
 #[get("/test/request")]

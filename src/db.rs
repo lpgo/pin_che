@@ -216,6 +216,7 @@ impl CacheConn {
                         ("_id", &order.id),
                         ("openid", &order.openid),
                         ("trip_id", &order.trip_id),
+                        ("trip_owner",&order.trip_owner),
                     ],
                 )
                 .hset_multiple(
@@ -257,6 +258,20 @@ impl CacheConn {
             .query(&**self)
             .map(|_: Vec<i32>| ())
             .map_err(|err| ServiceError::RedisError(err))
+    }
+
+    //返回transaction_id用于微信退款
+    pub fn change_order_price(&self, order_id: &str, openid: &str, change: i32) -> Result<String> {
+        let order_key = format!("{}:{}", entity::Order::get_name(), order_id);
+        let trip_owner: String = self.hget(&order_key, "trip_owner")?;
+        let transaction_id: String = self.hget(&order_key, "transaction_id")?;
+        if openid != trip_owner {
+            Err(ServiceError::TripNotYours)
+        } else {
+            self.hincr(&order_key, "price", change)
+                .map(|_: i32| transaction_id)
+                .map_err(|err| ServiceError::RedisError(err))
+        }
     }
 
     pub fn get_object<'de, T>(&self, id: &str) -> Result<T>
