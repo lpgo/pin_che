@@ -203,15 +203,15 @@ impl CacheConn {
 
     pub fn add_order(&self, order: &entity::Order) -> Result<()> {
         let trip_key = format!("{}:{}", entity::Trip::get_name(), order.trip_id);
+        let order_key = format!("{}:{}", entity::Order::get_name(), order.id);
         redis::transaction(&**self, &[&trip_key], |pipe| {
-            println!("trip key is {}", &trip_key);
             let count: i64 = self.hget(&trip_key, "current_seat")?;
             if count < order.count {
                 return pipe.query(&**self).map(|_: Vec<i32>| Some(false));
             }
             pipe.hincr(&trip_key, "current_seat", -order.count)
                 .hset_multiple(
-                    format!("{}:{}", entity::Order::get_name(), order.id),
+                    &order_key,
                     &[
                         ("_id", &order.id),
                         ("openid", &order.openid),
@@ -219,7 +219,7 @@ impl CacheConn {
                     ],
                 )
                 .hset_multiple(
-                    format!("{}:{}", entity::Order::get_name(), order.id),
+                    &order_key,
                     &[
                         ("order_id", order.order_id.as_ref()),
                         ("transaction_id", order.transaction_id.as_ref()),
@@ -227,18 +227,17 @@ impl CacheConn {
                     ],
                 )
                 .hset_multiple(
-                    format!("{}:{}", entity::Order::get_name(), order.id),
+                    &order_key,
                     &[
                         ("price", order.price),
                         ("count", order.count),
                         ("start_time", order.start_time),
                     ],
                 )
-                .hset(
-                    format!("{}:{}", entity::Order::get_name(), order.id),
-                    "status",
-                    &order.status,
-                )
+                .hset(&order_key, "status", &order.status)
+                .expire(&order_key, 3 * 60)
+                .hset(format!("OrderEx:{}", order.id), "count",order.count)
+                .hset(format!("OrderEx:{}", order.id),"trip_id",&order.trip_id)  //用于未支付时恢复物品数量
                 .query(&**self)
                 .map(|_: Vec<i32>| Some(true))
         }).map_err(|err| ServiceError::RedisError(err))
@@ -249,6 +248,17 @@ impl CacheConn {
             })
     }
 
+    pub fn pay_order(&self, id: String) -> Result<()> {
+        let order_key = format!("{}:{}", entity::Order::get_name(), &id);
+        redis::pipe()
+            .atomic()
+            .hset(order_key, "status", &entity::OrderStatus::Paid)
+            .del(format!("OrderEx:{}", &id))
+            .query(&**self)
+            .map(|_: Vec<i32>| ())
+            .map_err(|err| ServiceError::RedisError(err))
+    }
+
     pub fn get_object<'de, T>(&self, id: &str) -> Result<T>
     where
         T: GetName + Deserialize<'de>,
@@ -257,5 +267,25 @@ impl CacheConn {
         value.deserialize().map_err(
             |err| ServiceError::RedisDecodeError(err),
         )
+    }
+}
+
+pub fn check_expire() -> Result<()> {
+    let client = redis::Client::open(setting::get_str("app.redis").as_str())?;
+    let mut pubsub = client.get_pubsub()?;
+    pubsub.subscribe("__keyevent@*__:expired")?;
+    loop {
+        let msg = pubsub.get_message()?;
+        let key: String = msg.get_payload()?;
+        let v: Vec<&str> = key.split(":").collect();
+        let ex_key = format!("OrderEx:{}", v[1]);
+        let trip_id: String = client.hget(&ex_key, "trip_id")?;
+        let count: i32 = client.hget(&ex_key, "count")?;
+        let _: i32 = client.hincr(
+            format!("Trip:{}", trip_id),
+            "current_seat",
+            count,
+        )?;
+        let _: i32 = client.del(&ex_key)?;
     }
 }
