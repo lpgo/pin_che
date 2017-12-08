@@ -197,6 +197,22 @@ impl<'a> redis::ToRedisArgs for &'a OrderStatus {
     }
 }
 
+impl redis::FromRedisValue for OrderStatus {
+    fn from_redis_value(v: &redis::Value) -> redis::RedisResult<Self> {
+        if let redis::Value::Data(ref data) = *v {
+            let s = String::from_utf8_lossy(&data);
+            match &*s {
+                "Unpaid" => Ok(OrderStatus::Unpaid),
+                "Paid" => Ok(OrderStatus::Paid),
+                "Submit" => Ok(OrderStatus::Submit),
+                _ => Ok(OrderStatus::Unpaid),
+            }
+        } else {
+            Err(redis::RedisError::from((redis::ErrorKind::TypeError,"not a Data")))
+        }
+    }
+}
+
 impl Trip {
     pub fn new(openid:String,form:TripForm) -> Trip{
         Trip{

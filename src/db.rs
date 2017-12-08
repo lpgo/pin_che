@@ -239,6 +239,7 @@ impl CacheConn {
                 .expire(&order_key, 3 * 60)
                 .hset(format!("OrderEx:{}", order.id), "count",order.count)
                 .hset(format!("OrderEx:{}", order.id),"trip_id",&order.trip_id)  //用于未支付时恢复物品数量
+                .sadd(format!("TripOrders:{}",&order.trip_id),&order_key)
                 .query(&**self)
                 .map(|_: Vec<i32>| Some(true))
         }).map_err(|err| ServiceError::RedisError(err))
@@ -261,7 +262,7 @@ impl CacheConn {
     }
 
     //返回transaction_id用于微信退款
-    pub fn change_order_price(&self, order_id: &str, openid: &str, change: i32) -> Result<String> {
+    pub fn change_order_price(&self, order_id: &str, openid: &str, change: i64) -> Result<String> {
         let order_key = format!("{}:{}", entity::Order::get_name(), order_id);
         let trip_owner: String = self.hget(&order_key, "trip_owner")?;
         let transaction_id: String = self.hget(&order_key, "transaction_id")?;
@@ -269,8 +270,49 @@ impl CacheConn {
             Err(ServiceError::TripNotYours)
         } else {
             self.hincr(&order_key, "price", change)
-                .map(|_: i32| transaction_id)
+                .map(|_: i64| transaction_id)
                 .map_err(|err| ServiceError::RedisError(err))
+        }
+    }
+
+    pub fn submit_order(&self, id: &str) -> Result<String> {
+        let order_key = format!("{}:{}", entity::Order::get_name(), id);
+        redis::transaction(&**self, &[&order_key], |pipe| {
+            let old_status: entity::OrderStatus = self.hget(&order_key, "status")?;
+            if old_status != entity::OrderStatus::Paid {
+                return pipe.query(&**self).map(|_: Vec<i32>| Some(false));
+            }
+            pipe.hset(&order_key, "status", &entity::OrderStatus::Submit)
+                .query(&**self)
+                .map(|_: Vec<i32>| Some(true))
+        }).map_err(|err| ServiceError::RedisError(err))
+            .and_then(|success| if success {
+                Ok(self.hget(&order_key, "trip_id")?)
+            } else {
+                Err(ServiceError::NoPay)
+            })
+    }
+
+    pub fn check_trip_finish(&self, id: &str) -> Result<()> {
+        let finish = self.sscan(format!("TripOrders:{}", id))?.all(
+            |key: String| {
+                let result: redis::RedisResult<entity::OrderStatus> = self.hget(key, "status");
+                if let Ok(status) = result {
+                    status == entity::OrderStatus::Submit
+                } else {
+                    false
+                }
+            },
+        );
+        if finish {
+            self.hset(
+                format!("Trip:{}", id),
+                "status",
+                &entity::TripStatus::Finish,
+            ).map(|_: i32| ())
+                .map_err(|err| ServiceError::RedisError(err))
+        } else {
+            Ok(())
         }
     }
 
@@ -302,5 +344,9 @@ pub fn check_expire() -> Result<()> {
             count,
         )?;
         let _: i32 = client.del(&ex_key)?;
+        let _: i32 = client.srem(
+            format!("TripOrders:{}", &trip_id),
+            format!("Order:{}", v[1]),
+        )?;
     }
 }

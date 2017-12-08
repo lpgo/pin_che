@@ -23,7 +23,12 @@ pub fn test() -> Result<()> {
     Ok(())
 }
 
-pub fn refund(order_id: &str, transaction_id: &str, refund_fee: i32) -> Result<()> {
+pub fn refund(order_id: &str, transaction_id: &str, refund_fee: i64) -> Result<()> {
     println!("{}{}{}", order_id, transaction_id, refund_fee);
+    Ok(())
+}
+
+pub fn pay_to_client(openid: &str, fee: i64) -> Result<()> {
+    println!("{}{}", openid, fee);
     Ok(())
 }

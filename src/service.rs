@@ -23,7 +23,7 @@ pub enum ServiceError {
     String(String),
     DontHaveEnoughSeats, //没有足够的座位
     NoAuth,
-    TimeOut, //距离出发时间不足半小时
+    NoPay, //没有支付
     TripNotYours, //你不是车主
     BsonEncoderError(bson::EncoderError),
     BsonDecoderError(bson::DecoderError),
@@ -42,8 +42,8 @@ impl fmt::Display for ServiceError {
         match *self {
             ServiceError::NoAuth => write!(f, "you are not auth!"),
             ServiceError::TripNotYours => write!(f, "this trip is not yours, you can't discount"),
-            ServiceError::TimeOut => {
-                write!(f, "for trip start have not half hours,you can not refund!")
+            ServiceError::NoPay => {
+                write!(f, "you are not paid this trip")
             }
             ServiceError::DontHaveEnoughSeats => write!(f, "this trip have not enough seats!"),
             ServiceError::String(ref s) => write!(f, "{}", s),
@@ -80,10 +80,10 @@ impl<'r> Responder<'r> for ServiceError {
                     ),
                 );
             },
-            ServiceError::TimeOut => {
+            ServiceError::NoPay => {
                 builder.status(Status::NotAcceptable).sized_body(
                     Cursor::new(
-                        r#"{"status": "ok", "reason": "for trip start have not half hours,you can not refund!"}"#,
+                        r#"{"status": "ok", "reason": "you are not paid this trip"}"#,
                     ),
                 );
             },
@@ -181,7 +181,7 @@ impl error::Error for ServiceError {
         match *self {
             ServiceError::NoAuth => "you are not auth!",
             ServiceError::TripNotYours => "this trip is not yours",
-            ServiceError::TimeOut => "for trip start have not half hours,you can not refund!",
+            ServiceError::NoPay => "you are not paid this trip",
             ServiceError::DontHaveEnoughSeats => "this trip have not enough seats!",
             ServiceError::String(ref s) => s.as_str(),
             ServiceError::BsonEncoderError(ref e) => e.description(),
@@ -292,10 +292,17 @@ impl Service {
         self.cache.pay_order(order_id)
     }
 
-    pub fn discount(&self,order_id:String,fee:i32) -> Result<()> {
+    pub fn discount(&self,order_id:String,fee:i64) -> Result<()> {
         let openid = "openid".to_owned();  //?
         self.cache.change_order_price(&order_id,&openid,-fee)
             .and_then(|transaction_id|external::refund(&order_id,&transaction_id,fee))
+    }
+
+    pub fn submit(&self, id:String) -> Result<()> {
+        let trip_id = self.cache.submit_order(&id)?;
+        let order:entity::Order = self.cache.get_object(&id)?;
+        external::pay_to_client(&order.trip_owner, (order.price as f64 * 0.95) as i64)?;
+        self.cache.check_trip_finish(&trip_id)
     }  
 
     pub fn test(&self) {

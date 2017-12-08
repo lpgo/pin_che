@@ -52,6 +52,7 @@ fn main() {
                 apply_trip,
                 pay,
                 discount,
+                submit,
             ],
         )
         .manage(database)
@@ -102,8 +103,13 @@ fn pay(id: String, s: Service) -> Result<()> {
 }
 
 #[get("/discount/<id>/<fee>")]
-fn discount(id: String, fee: i32, s: Service) -> Result<()> {
+fn discount(id: String, fee: i64, s: Service) -> Result<()> {
     s.discount(id, fee)
+}
+
+#[get("/submit/<id>")]
+fn submit(id: String, s: Service) -> Result<()> {
+    s.submit(id)
 }
 
 #[get("/test/request")]
