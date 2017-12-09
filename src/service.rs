@@ -288,7 +288,8 @@ impl Service {
             .and_then(|order| self.cache.add_order(&order).map(|_|order))
     }
 
-    pub fn pay(&self,order_id:String) -> Result<()> {
+    pub fn pay(&self,order_id:String,sign:String) -> Result<()> {
+        println!("need check sign {}", sign); //?
         self.cache.pay_order(order_id)
     }
 

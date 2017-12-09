@@ -99,9 +99,9 @@ fn apply_trip(
 }
 
 //微信支付回调（通过其他服务）
-#[get("/pay/<id>")]
-fn pay(id: String, s: Service) -> Result<()> {
-    s.pay(id)
+#[get("/pay/<id>/<sign>")]
+fn pay(id: String, sign: String, s: Service) -> Result<()> {
+    s.pay(id, sign)
 }
 
 #[get("/discount/<id>/<fee>")]
