@@ -254,8 +254,9 @@ impl CacheConn {
         let order_key = format!("{}:{}", entity::Order::get_name(), &id);
         redis::pipe()
             .atomic()
-            .hset(order_key, "status", &entity::OrderStatus::Paid)
+            .hset(&order_key, "status", &entity::OrderStatus::Paid)
             .del(format!("OrderEx:{}", &id))
+            .persist(&order_key)
             .query(&**self)
             .map(|_: Vec<i32>| ())
             .map_err(|err| ServiceError::RedisError(err))
@@ -320,7 +321,7 @@ impl CacheConn {
     where
         T: GetName + Deserialize<'de>,
     {
-        let value: redis::Value = self.hgetall(format!("{}:{}", "Trip", id))?;
+        let value: redis::Value = self.hgetall(format!("{}:{}", T::get_name(), id))?;
         value.deserialize().map_err(
             |err| ServiceError::RedisDecodeError(err),
         )
@@ -330,23 +331,33 @@ impl CacheConn {
 pub fn check_expire() -> Result<()> {
     let client = redis::Client::open(setting::get_str("app.redis").as_str())?;
     let mut pubsub = client.get_pubsub()?;
-    pubsub.subscribe("__keyevent@*__:expired")?;
+    pubsub.subscribe("__keyevent@0__:expired")?;
     loop {
-        let msg = pubsub.get_message()?;
-        let key: String = msg.get_payload()?;
-        let v: Vec<&str> = key.split(":").collect();
-        let ex_key = format!("OrderEx:{}", v[1]);
-        let trip_id: String = client.hget(&ex_key, "trip_id")?;
-        let count: i32 = client.hget(&ex_key, "count")?;
-        let _: i32 = client.hincr(
-            format!("Trip:{}", trip_id),
-            "current_seat",
-            count,
-        )?;
-        let _: i32 = client.del(&ex_key)?;
-        let _: i32 = client.srem(
-            format!("TripOrders:{}", &trip_id),
-            format!("Order:{}", v[1]),
-        )?;
+        if let Err(err) = deal_expire(&mut pubsub, &client) {
+            println!("{:?}", err);
+        }
     }
+}
+
+fn deal_expire(pubsub: &mut redis::PubSub, client: &redis::Client) -> Result<()> {
+    let msg = pubsub.get_message()?;
+    let key: String = msg.get_payload()?;
+    let v: Vec<&str> = key.split(":").collect();
+    if v.len() != 2 {
+        return Err(ServiceError::String(format!("key is {},can't use", key)));
+    }
+    let ex_key = format!("OrderEx:{}", v[1]);
+    let trip_id: String = client.hget(&ex_key, "trip_id")?;
+    let count: i32 = client.hget(&ex_key, "count")?;
+    let _: i32 = client.hincr(
+        format!("Trip:{}", trip_id),
+        "current_seat",
+        count,
+    )?;
+    let _: i32 = client.del(&ex_key)?;
+    let _: i32 = client.srem(
+        format!("TripOrders:{}", &trip_id),
+        format!("Order:{}", v[1]),
+    )?;
+    Ok(())
 }

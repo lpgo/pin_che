@@ -41,7 +41,9 @@ fn main() {
             .unwrap();
     });
 
-    thread::spawn(|| pin_che::db::check_expire());
+    thread::spawn(|| {
+        println!("{:?}", pin_che::db::check_expire());
+    });
 
     rocket::ignite()
         .mount(
