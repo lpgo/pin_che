@@ -55,6 +55,7 @@ fn main() {
                 pay,
                 discount,
                 submit,
+                get_trips,
             ],
         )
         .manage(database)
@@ -112,6 +113,10 @@ fn discount(id: String, fee: i64, s: Service) -> Result<()> {
 #[get("/submit/<id>")]
 fn submit(id: String, s: Service) -> Result<()> {
     s.submit(id)
+}
+#[get("/getTrips/<page>")]
+fn get_trips(s: Service, page: isize) -> Result<Json<Vec<entity::Trip>>> {
+    s.get_trips(page).map(|vec| Json(vec))
 }
 
 #[get("/test/request")]

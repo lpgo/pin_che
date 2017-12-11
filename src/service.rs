@@ -306,6 +306,11 @@ impl Service {
         self.cache.check_trip_finish(&trip_id)
     }  
 
+    pub fn get_trips(&self,page:isize) -> Result<Vec<entity::Trip>> {
+        //每页10个  0-9,10-19
+        self.cache.get_trips((page-1)*10, page*10-1)
+    }
+
     pub fn test(&self) {
        
     }

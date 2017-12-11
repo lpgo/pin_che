@@ -157,11 +157,11 @@ impl DbConn {
 
 impl CacheConn {
     pub fn add_trip(&self, t: &entity::Trip) -> Result<()> {
-        println!("{:?}", t);
         let mut pipe = redis::pipe();
+        let trip_key = format!("{}:{}", entity::Trip::get_name(), t.id);
         pipe.atomic()
             .hset_multiple(
-                format!("{}:{}", entity::Trip::get_name(), t.id),
+                &trip_key,
                 &[
                     ("_id", &t.id),
                     ("openid", &t.openid),
@@ -174,7 +174,7 @@ impl CacheConn {
                 ],
             )
             .hset_multiple(
-                format!("{}:{}", entity::Trip::get_name(), t.id),
+                &trip_key,
                 &[
                     ("seat_count", t.seat_count),
                     ("current_seat", t.current_seat),
@@ -182,17 +182,11 @@ impl CacheConn {
                     ("price", t.price),
                 ],
             )
-            .hset(
-                format!("{}:{}", entity::Trip::get_name(), t.id),
-                "status",
-                &t.status,
-            );
+            .hset(&trip_key, "status", &t.status)
+            .sadd(format!("UserTrips:{}", &t.openid), &trip_key)
+            .lpush("TripList", &trip_key);
         if let Some(ref msg) = t.message {
-            pipe.hset(
-                format!("{}:{}", entity::Trip::get_name(), t.id),
-                "message",
-                msg,
-            );
+            pipe.hset(&trip_key, "message", msg);
         }
         pipe.query(&**self)
             .map(|result: Vec<i32>| {
@@ -240,6 +234,7 @@ impl CacheConn {
                 .hset(format!("OrderEx:{}", order.id), "count",order.count)
                 .hset(format!("OrderEx:{}", order.id),"trip_id",&order.trip_id)  //用于未支付时恢复物品数量
                 .sadd(format!("TripOrders:{}",&order.trip_id),&order_key)
+                .sadd(format!("UserOrders:{}",&order.openid),&order_key)
                 .query(&**self)
                 .map(|_: Vec<i32>| Some(true))
         }).map_err(|err| ServiceError::RedisError(err))
@@ -315,6 +310,17 @@ impl CacheConn {
         } else {
             Ok(())
         }
+    }
+
+    pub fn get_trips(&self, start: isize, end: isize) -> Result<Vec<entity::Trip>> {
+        let keys: Vec<String> = self.lrange("TripList", start, end)?;
+        Ok(
+            keys.iter()
+                .map(|s| self.get_object::<entity::Trip>(s))
+                .filter(|result| result.is_ok())
+                .map(|t| t.unwrap())
+                .collect(),
+        )
     }
 
     pub fn get_object<'de, T>(&self, id: &str) -> Result<T>
